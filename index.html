@@ -6,17 +6,26 @@
 <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet">
+
 <link rel="stylesheet" href="./resources/ol.css">
 <link rel="stylesheet" href="resources/fontawesome-all.min.css">
 <link href="resources/photon-geocoder-autocomplete.min.css" rel="stylesheet">
 <link rel="stylesheet" href="./resources/ol-layerswitcher.css">
 <link rel="stylesheet" href="./resources/qgis2web.css">
+
 <style>
 html, body { background-color: #ffffff; margin:0; padding:0; }
 #map { width:100%; height:100%; margin:0; padding:0; }
+
+.ol-zoom,
+.ol-rotate,
+.ol-attribution button { display:none !important; }
+
 .search-container {
   position:absolute;
-  top:10px;
+  top:15px;
   left:10px;
   z-index:1000;
   display:flex;
@@ -25,58 +34,65 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   padding:6px 10px;
   border-radius:4px;
   box-shadow:0 1px 4px rgba(0,0,0,0.3);
-  font-family:sans-serif;
+  font-family:'Quicksand', sans-serif;
   font-size:13px;
 }
+
 .search-container input {
   padding:4px 6px;
   font-size:13px;
-  width:140px;
+  width:160px;
+  font-family:'Quicksand', sans-serif;
+  font-weight:400;
+  letter-spacing:0.2px;
 }
+
 .ol-popup {
-  position: absolute;
-  background-color: rgba(255, 255, 255, 0.95);
-  padding: 12px 16px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  min-width: 250px;
-  max-width: 400px;
-  line-height: 1.5;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  white-space: normal;
-  word-wrap: break-word;
-  overflow: visible;
-  opacity: 0;                 /* inicial transparente */
-  transition: opacity 0.25s ease-in-out; /* transición suave */
+  position:absolute;
+  background-color:rgba(255,255,255,0.96);
+  padding:14px 18px;
+  border-radius:6px;
+  border:1px solid #ccc;
+  min-width:260px;
+  max-width:420px;
+  font-family:'Quicksand', sans-serif;
+  line-height:1.65;
+  box-shadow:0 2px 8px rgba(0,0,0,0.2);
+  opacity:0;
+  transition:opacity .25s ease-in-out;
 }
-.ol-popup.visible {
-  opacity: 1;                 /* visible al abrir */
-}
-.ol-popup:after, .ol-popup:before { display:none; } /* elimina flechas si existían */
+
+.ol-popup.visible { opacity:1; }
+.ol-popup:after,.ol-popup:before { display:none; }
+
 .ol-popup-closer {
-  position: absolute;
+  position:absolute;
   top:4px;
-  right:4px;
-  text-decoration: none;
-  font-size: 16px;
-  color: #666;
+  right:6px;
+  font-size:15px;
+  color:#666;
+  text-decoration:none;
 }
 </style>
+
 <title>Mi Atlas Herpetológico de Galicia</title>
 </head>
 <body>
+
 <div class="search-container">
   <input id="speciesSelect" placeholder="Buscar especie..." list="speciesList">
   <datalist id="speciesList"></datalist>
   <input id="gridSelect" placeholder="Buscar cuadrícula..." list="gridList">
   <datalist id="gridList"></datalist>
 </div>
+
 <div id="map">
 <div id="popup" class="ol-popup">
 <a href="#" id="popup-closer" class="ol-popup-closer"></a>
 <div id="popup-content"></div>
 </div>
 </div>
+
 <script src="resources/qgis2web_expressions.js"></script>
 <script src="./resources/functions.js"></script>
 <script src="./resources/ol.js"></script>
@@ -89,18 +105,23 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
 <script src="./layers/layers.js" type="text/javascript"></script>
 <script src="./resources/Autolinker.min.js"></script>
 <script src="./resources/qgis2web.js"></script>
+
 <script>
 window.addEventListener('load', function(){
-    var atlasLayer = null;
+
+    let atlasLayer=null;
+    let ignLayer=null;
+
     map.getLayers().forEach(function(l){
-        if(l.get('title') && l.get('title').toLowerCase().includes('atlas')) atlasLayer = l;
+        const t=(l.get('title')||'').toLowerCase();
+        if(t.includes('atlas')) atlasLayer=l;
+        if(t.includes('ign')) ignLayer=l;
     });
+
     if(!atlasLayer) return;
 
-    // --- ELIMINAR BOTONES Y BLOQUEAR ZOOM Y PAN COMPLETAMENTE ---
-    map.getControls().forEach(function(c){
-        if(c instanceof ol.control.Zoom) map.removeControl(c);
-    });
+    if(ignLayer) ignLayer.set('interactive',false);
+
     map.getInteractions().forEach(function(i){
         if(i instanceof ol.interaction.MouseWheelZoom ||
            i instanceof ol.interaction.DoubleClickZoom ||
@@ -111,115 +132,100 @@ window.addEventListener('load', function(){
         }
     });
 
-    var view = map.getView();
-    var zoom = view.getZoom();
+    const view=map.getView();
+    const zoom=view.getZoom();
     view.setMinZoom(zoom);
     view.setMaxZoom(zoom);
 
-    var speciesInput = document.getElementById('speciesSelect');
-    var gridInput = document.getElementById('gridSelect');
+    const speciesInput=document.getElementById('speciesSelect');
+    const gridInput=document.getElementById('gridSelect');
 
-    var features = atlasLayer.getSource().getFeatures();
+    const features=atlasLayer.getSource().getFeatures();
 
-    // generar listas de especies y cuadrículas
-    var speciesSet = new Set();
-    var gridSet = new Set();
-    features.forEach(function(f){
-        var val = f.get('especies');
-        if(val){ val.split(';').forEach(s=>speciesSet.add(s.trim())); }
-        var cuad = f.get('CUADRICULA');
+    const speciesSet=new Set();
+    const gridSet=new Set();
+
+    features.forEach(f=>{
+        const val=f.get('especies');
+        if(val) val.split(';').forEach(s=>speciesSet.add(s.trim()));
+        const cuad=f.get('CUADRICULA');
         if(cuad) gridSet.add(cuad);
     });
 
-    // rellenar datalist de especies
-    var speciesList = document.getElementById('speciesList');
-    Array.from(speciesSet).sort().forEach(function(sp){
-        var opt = document.createElement('option');
-        opt.value = sp;
+    const speciesList=document.getElementById('speciesList');
+    [...speciesSet].sort().forEach(sp=>{
+        const opt=document.createElement('option');
+        opt.value=sp;
         speciesList.appendChild(opt);
     });
 
-    // rellenar datalist de cuadrículas
-    var gridList = document.getElementById('gridList');
-    Array.from(gridSet).sort().forEach(function(cuad){
-        var opt = document.createElement('option');
-        opt.value = cuad;
+    const gridList=document.getElementById('gridList');
+    [...gridSet].sort().forEach(c=>{
+        const opt=document.createElement('option');
+        opt.value=c;
         gridList.appendChild(opt);
     });
 
-    // función de filtrado por especie y cuadrícula
     function filterFeatures(){
-        var sTxt = speciesInput.value.toLowerCase();
-        var gTxt = gridInput.value.toLowerCase();
-        features.forEach(function(f){
-            var especies = (f.get('especies')||'').toLowerCase();
-            var cuad = (f.get('CUADRICULA')||'').toLowerCase();
-            var visible = (sTxt === '' || especies.includes(sTxt)) && (gTxt === '' || cuad.includes(gTxt));
-            f.setStyle(visible ? undefined : new ol.style.Style(null));
+        const sTxt=speciesInput.value.toLowerCase();
+        const gTxt=gridInput.value.toLowerCase();
+
+        features.forEach(f=>{
+            const especies=(f.get('especies')||'').toLowerCase();
+            const cuad=(f.get('CUADRICULA')||'').toLowerCase();
+            const visible=(sTxt===''||especies.includes(sTxt))&&(gTxt===''||cuad.includes(gTxt));
+            f.setStyle(visible?undefined:new ol.style.Style(null));
         });
     }
 
-    speciesInput.addEventListener('input', filterFeatures);
-    gridInput.addEventListener('input', filterFeatures);
+    speciesInput.addEventListener('input',filterFeatures);
+    gridInput.addEventListener('input',filterFeatures);
 
-    // popup personalizado con ajuste de posición y fade-in
-    var overlay = new ol.Overlay({
-        element: document.getElementById('popup'),
-        autoPan: false
+    const overlay=new ol.Overlay({
+        element:document.getElementById('popup'),
+        autoPan:false
     });
     map.addOverlay(overlay);
 
-    var popupEl = document.getElementById('popup');
+    const popupEl=document.getElementById('popup');
 
-    document.getElementById('popup-closer').onclick = function() {
-        popupEl.classList.remove('visible'); // quitar fade-out
+    document.getElementById('popup-closer').onclick=function(){
+        popupEl.classList.remove('visible');
         overlay.setPosition(undefined);
         return false;
     };
 
-    map.on('singleclick', function(evt){
-        var feature = map.forEachFeatureAtPixel(evt.pixel,function(ft,layer){
-            if(layer===atlasLayer) return ft;
+    map.on('singleclick',function(evt){
+
+        let foundFeature=null;
+
+        map.forEachFeatureAtPixel(evt.pixel,function(ft,layer){
+            if(layer!==atlasLayer) return;
+            if(!ft.get('CUADRICULA')) return;
+            foundFeature=ft;
+            return true;
         });
-        if(!feature) return;
 
-        var especies = (feature.get('especies')||'').split(';').map(s=>'<i>'+s.trim()+'</i>').join(', ');
-        var html = '<b>Cuadrícula:</b> '+feature.get('CUADRICULA')+'<br>'+ 
-                   '<b>Nº especies:</b> '+feature.get('n_especies')+'<br>'+ 
-                   '<b>Especies:</b> '+especies;
+        if(!foundFeature) return;
 
-        document.getElementById('popup-content').innerHTML = html;
+        const especies=(foundFeature.get('especies')||'')
+            .split(';')
+            .map(s=>'<i>'+s.trim()+'</i>')
+            .join(', ');
 
-        // posición inicial
-        var coord = evt.coordinate;
-        overlay.setPosition(coord);
-        popupEl.classList.remove('visible'); // reinicia fade
-        setTimeout(()=>popupEl.classList.add('visible'), 10); // fade-in rápido
+        const html=
+            '<b>Cuadrícula:</b> '+foundFeature.get('CUADRICULA')+'<br>'+
+            '<b>Nº especies:</b> '+foundFeature.get('n_especies')+'<br>'+
+            '<b>Especies:</b> '+especies;
 
-        // ajuste para que no quede cortado y margen superior/izquierdo
-        setTimeout(function(){
-            var mapViewport = map.getViewport().getBoundingClientRect();
-            var popupRect = popupEl.getBoundingClientRect();
-            var deltaX = 0, deltaY = 0;
-            const margin = 50; // margen superior e izquierdo para no tapar búsqueda
+        document.getElementById('popup-content').innerHTML=html;
 
-            if(popupRect.right > mapViewport.right) deltaX = popupRect.right - mapViewport.right + 10;
-            if(popupRect.left < mapViewport.left + margin) deltaX = popupRect.left - (mapViewport.left + margin);
-            if(popupRect.bottom > mapViewport.bottom) deltaY = popupRect.bottom - mapViewport.bottom + 10;
-            if(popupRect.top < mapViewport.top + margin) deltaY = popupRect.top - (mapViewport.top + margin);
-
-            if(deltaX!==0 || deltaY!==0){
-                var newPixel = map.getPixelFromCoordinate(coord);
-                newPixel[0] -= deltaX;
-                newPixel[1] -= deltaY;
-                var newCoord = map.getCoordinateFromPixel(newPixel);
-                overlay.setPosition(newCoord);
-            }
-        }, 0);
+        overlay.setPosition(evt.coordinate);
+        popupEl.classList.remove('visible');
+        setTimeout(()=>popupEl.classList.add('visible'),10);
     });
 });
 </script>
+
 </body>
 </html>
-
-
