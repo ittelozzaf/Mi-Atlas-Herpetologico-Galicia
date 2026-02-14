@@ -19,9 +19,7 @@
 html, body { background-color: #ffffff; margin:0; padding:0; }
 #map { width:100%; height:100%; margin:0; padding:0; }
 
-.ol-zoom,
-.ol-rotate,
-.ol-attribution button { display:none !important; }
+.ol-zoom,.ol-rotate,.ol-attribution button { display:none !important; }
 
 .search-container {
   position:absolute;
@@ -47,6 +45,26 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   letter-spacing:0.2px;
 }
 
+.autocomplete{position:relative;display:flex;flex-direction:column;}
+.dropdown{
+  position:absolute;
+  top:100%;
+  left:0;
+  right:0;
+  background:white;
+  border:1px solid #ccc;
+  border-radius:4px;
+  margin-top:4px;
+  max-height:260px;
+  overflow-y:auto;
+  box-shadow:0 2px 8px rgba(0,0,0,0.25);
+  display:none;
+  z-index:2000;
+  font-family:'Quicksand',sans-serif;
+}
+.dropdown div{padding:6px 8px;cursor:pointer;font-size:13px;line-height:1.35;}
+.dropdown div:hover{background:#f0f0f0;}
+
 .ol-popup {
   position:absolute;
   background-color:rgba(255,255,255,0.96);
@@ -61,7 +79,6 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   opacity:0;
   transition:opacity .25s ease-in-out;
 }
-
 .ol-popup.visible { opacity:1; }
 .ol-popup:after,.ol-popup:before { display:none; }
 
@@ -80,10 +97,17 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
 <body>
 
 <div class="search-container">
-  <input id="speciesSelect" placeholder="Buscar especie..." list="speciesList">
-  <datalist id="speciesList"></datalist>
-  <input id="gridSelect" placeholder="Buscar cuadrícula..." list="gridList">
-  <datalist id="gridList"></datalist>
+
+  <div class="autocomplete">
+    <input id="speciesSelect" placeholder="Buscar especie..." autocomplete="off">
+    <div id="speciesDropdown" class="dropdown"></div>
+  </div>
+
+  <div class="autocomplete">
+    <input id="gridSelect" placeholder="Buscar cuadrícula..." autocomplete="off">
+    <div id="gridDropdown" class="dropdown"></div>
+  </div>
+
 </div>
 
 <div id="map">
@@ -109,67 +133,42 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
 <script>
 window.addEventListener('load', function(){
 
-    let atlasLayer=null;
-    let ignLayer=null;
+    const view = map.getView();
 
+    // Guardar posición y zoom inicial
+    const initialCenter = view.getCenter().slice(); 
+    const initialZoom = view.getZoom();
+
+    let atlasLayer = null;
     map.getLayers().forEach(function(l){
         const t=(l.get('title')||'').toLowerCase();
         if(t.includes('atlas')) atlasLayer=l;
-        if(t.includes('ign')) ignLayer=l;
     });
-
     if(!atlasLayer) return;
 
-    if(ignLayer) ignLayer.set('interactive',false);
-
-    map.getInteractions().forEach(function(i){
-        if(i instanceof ol.interaction.MouseWheelZoom ||
-           i instanceof ol.interaction.DoubleClickZoom ||
-           i instanceof ol.interaction.PinchZoom ||
-           i instanceof ol.interaction.KeyboardZoom ||
-           i instanceof ol.interaction.DragPan){
-            map.removeInteraction(i);
+    // --- BLOQUEAR COMPLETAMENTE LA VISTA ---
+    map.getInteractions().forEach(function(interaction){
+        if(!(interaction instanceof ol.interaction.Select)){
+            map.removeInteraction(interaction);
         }
     });
 
-    const view=map.getView();
-    const zoom=view.getZoom();
-    view.setMinZoom(zoom);
-    view.setMaxZoom(zoom);
+    view.setMinZoom(initialZoom);
+    view.setMaxZoom(initialZoom);
 
     const speciesInput=document.getElementById('speciesSelect');
     const gridInput=document.getElementById('gridSelect');
+    const speciesDropdown=document.getElementById('speciesDropdown');
+    const gridDropdown=document.getElementById('gridDropdown');
 
     const features=atlasLayer.getSource().getFeatures();
 
-    const speciesSet=new Set();
-    const gridSet=new Set();
-
-    features.forEach(f=>{
-        const val=f.get('especies');
-        if(val) val.split(';').forEach(s=>speciesSet.add(s.trim()));
-        const cuad=f.get('CUADRICULA');
-        if(cuad) gridSet.add(cuad);
-    });
-
-    const speciesList=document.getElementById('speciesList');
-    [...speciesSet].sort().forEach(sp=>{
-        const opt=document.createElement('option');
-        opt.value=sp;
-        speciesList.appendChild(opt);
-    });
-
-    const gridList=document.getElementById('gridList');
-    [...gridSet].sort().forEach(c=>{
-        const opt=document.createElement('option');
-        opt.value=c;
-        gridList.appendChild(opt);
-    });
+    const speciesArray=[...new Set(features.flatMap(f=>(f.get('especies')||'').split(';').map(s=>s.trim()).filter(Boolean)))].sort();
+    const gridArray=[...new Set(features.map(f=>f.get('CUADRICULA')).filter(Boolean))].sort();
 
     function filterFeatures(){
         const sTxt=speciesInput.value.toLowerCase();
         const gTxt=gridInput.value.toLowerCase();
-
         features.forEach(f=>{
             const especies=(f.get('especies')||'').toLowerCase();
             const cuad=(f.get('CUADRICULA')||'').toLowerCase();
@@ -178,51 +177,102 @@ window.addEventListener('load', function(){
         });
     }
 
-    speciesInput.addEventListener('input',filterFeatures);
-    gridInput.addEventListener('input',filterFeatures);
+    function setupAutocomplete(input,dropdown,data){
+        input.addEventListener('input',()=>{
+            const val=input.value.toLowerCase();
+            dropdown.innerHTML='';
+            if(!val){dropdown.style.display='none';filterFeatures();return;}
+            const matches=data.filter(v=>v.toLowerCase().includes(val)).slice(0,10);
+            matches.forEach(m=>{
+                const div=document.createElement('div');
+                div.textContent=m;
+                div.onclick=()=>{input.value=m;dropdown.style.display='none';filterFeatures();};
+                dropdown.appendChild(div);
+            });
+            dropdown.style.display=matches.length?'block':'none';
+            filterFeatures();
+        });
+        document.addEventListener('click',e=>{if(!input.contains(e.target))dropdown.style.display='none';});
+    }
 
-    const overlay=new ol.Overlay({
-        element:document.getElementById('popup'),
-        autoPan:false
-    });
+    setupAutocomplete(speciesInput,speciesDropdown,speciesArray);
+    setupAutocomplete(gridInput,gridDropdown,gridArray);
+
+    const overlay=new ol.Overlay({element:document.getElementById('popup'),autoPan:false});
     map.addOverlay(overlay);
 
     const popupEl=document.getElementById('popup');
 
-    document.getElementById('popup-closer').onclick=function(){
-        popupEl.classList.remove('visible');
-        overlay.setPosition(undefined);
+    // Función de cierre del popup (cierra y anima el mapa)
+    function closePopup() {
+        popupEl.classList.remove('visible'); 
+        overlay.setPosition(undefined); 
+        view.animate({
+            center: initialCenter,
+            zoom: initialZoom,
+            duration: 800
+        });
+    }
+
+    document.getElementById('popup-closer').onclick = function(){
+        closePopup();
         return false;
     };
 
-    map.on('singleclick',function(evt){
+    // Cerrar popup al hacer clic fuera del mismo
+    map.on('click', function(evt){
+        // Si el clic no está sobre el overlay, cerrar
+        const clickedPixel = evt.pixel;
+        const overlayPixel = map.getPixelFromCoordinate(overlay.getPosition() || [0,0]);
+        if(overlay.getPosition() && clickedPixel[0] < overlayPixel[0]-popupEl.offsetWidth ||
+           clickedPixel[0] > overlayPixel[0]+popupEl.offsetWidth ||
+           clickedPixel[1] < overlayPixel[1]-popupEl.offsetHeight ||
+           clickedPixel[1] > overlayPixel[1]+popupEl.offsetHeight){
+            closePopup();
+        }
+    });
 
+    map.on('singleclick', function(evt){
         let foundFeature=null;
-
         map.forEachFeatureAtPixel(evt.pixel,function(ft,layer){
             if(layer!==atlasLayer) return;
             if(!ft.get('CUADRICULA')) return;
-            foundFeature=ft;
+            foundFeature=ft; 
             return true;
         });
-
         if(!foundFeature) return;
 
-        const especies=(foundFeature.get('especies')||'')
-            .split(';')
-            .map(s=>'<i>'+s.trim()+'</i>')
-            .join(', ');
+        // Cerrar popup anterior si existe
+        closePopup();
 
-        const html=
+        const especies=(foundFeature.get('especies')||'').split(';').map(s=>'<i>'+s.trim()+'</i>').join(', ');
+        document.getElementById('popup-content').innerHTML=
             '<b>Cuadrícula:</b> '+foundFeature.get('CUADRICULA')+'<br>'+
             '<b>Nº especies:</b> '+foundFeature.get('n_especies')+'<br>'+
             '<b>Especies:</b> '+especies;
 
-        document.getElementById('popup-content').innerHTML=html;
-
         overlay.setPosition(evt.coordinate);
-        popupEl.classList.remove('visible');
-        setTimeout(()=>popupEl.classList.add('visible'),10);
+
+        setTimeout(() => {
+            const margin = 10;
+            const rect = popupEl.getBoundingClientRect();
+            let pixel = map.getPixelFromCoordinate(overlay.getPosition());
+            let dx = 0, dy = 0;
+
+            if(rect.right > window.innerWidth - margin) dx = rect.right - window.innerWidth + margin;
+            if(rect.left < margin) dx = rect.left - margin;
+            if(rect.bottom > window.innerHeight - margin) dy = rect.bottom - window.innerHeight + margin;
+            if(rect.top < margin) dy = rect.top - margin;
+
+            if(dx || dy){
+                overlay.setPosition(map.getCoordinateFromPixel([
+                    pixel[0] - dx,
+                    pixel[1] - dy
+                ]));
+            }
+
+            popupEl.classList.add('visible');
+        }, 0);
     });
 });
 </script>
