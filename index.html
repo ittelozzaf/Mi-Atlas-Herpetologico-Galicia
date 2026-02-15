@@ -55,8 +55,8 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   border:1px solid #ccc;
   border-radius:4px;
   margin-top:4px;
-  max-height:260px;
-  overflow-y:auto;
+  max-height:260px; /* altura visible limitada */
+  overflow-y:auto;  /* scroll para resto */
   box-shadow:0 2px 8px rgba(0,0,0,0.25);
   display:none;
   z-index:2000;
@@ -90,6 +90,9 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   color:#666;
   text-decoration:none;
 }
+
+/* Permitir scroll página */
+.ol-viewport { touch-action: pan-y !important; }
 </style>
 
 <title>Mi Atlas Herpetológico de Galicia</title>
@@ -134,8 +137,6 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
 window.addEventListener('load', function(){
 
     const view = map.getView();
-
-    // Guardar posición y zoom inicial
     const initialCenter = view.getCenter().slice(); 
     const initialZoom = view.getZoom();
 
@@ -146,7 +147,6 @@ window.addEventListener('load', function(){
     });
     if(!atlasLayer) return;
 
-    // --- BLOQUEAR COMPLETAMENTE LA VISTA ---
     map.getInteractions().forEach(function(interaction){
         if(!(interaction instanceof ol.interaction.Select)){
             map.removeInteraction(interaction);
@@ -177,23 +177,51 @@ window.addEventListener('load', function(){
         });
     }
 
-    function setupAutocomplete(input,dropdown,data){
-        input.addEventListener('input',()=>{
-            const val=input.value.toLowerCase();
+    /* ========= AUTOCOMPLETE ACTUALIZADO ========= */
+    function setupAutocomplete(input, dropdown, data){
+
+        function renderList(filtered){
             dropdown.innerHTML='';
-            if(!val){dropdown.style.display='none';filterFeatures();return;}
-            const matches=data.filter(v=>v.toLowerCase().includes(val)).slice(0,10);
-            matches.forEach(m=>{
+            filtered.forEach(value=>{
                 const div=document.createElement('div');
-                div.textContent=m;
-                div.onclick=()=>{input.value=m;dropdown.style.display='none';filterFeatures();};
+                div.textContent=value;
+
+                div.addEventListener('click',function(e){
+                    e.stopPropagation();
+                    input.value=value;
+                    dropdown.style.display='none';
+                    filterFeatures();
+                });
+
                 dropdown.appendChild(div);
             });
-            dropdown.style.display=matches.length?'block':'none';
+
+            dropdown.style.display = filtered.length?'block':'none';
+        }
+
+        input.addEventListener('focus',function(){
+            renderList(data);
+        });
+
+        input.addEventListener('click',function(e){
+            e.stopPropagation();
+            renderList(data);
+        });
+
+        input.addEventListener('input',function(){
+            const val=input.value.toLowerCase();
+            const filtered = data.filter(v=>v.toLowerCase().includes(val));
+            renderList(filtered);
             filterFeatures();
         });
-        document.addEventListener('click',e=>{if(!input.contains(e.target))dropdown.style.display='none';});
+
+        dropdown.addEventListener('click',e=>e.stopPropagation());
+
+        document.addEventListener('click',function(){
+            dropdown.style.display='none';
+        });
     }
+    /* ======================================== */
 
     setupAutocomplete(speciesInput,speciesDropdown,speciesArray);
     setupAutocomplete(gridInput,gridDropdown,gridArray);
@@ -203,36 +231,29 @@ window.addEventListener('load', function(){
 
     const popupEl=document.getElementById('popup');
 
-    // Función de cierre del popup (cierra y anima el mapa)
-    function closePopup() {
-        popupEl.classList.remove('visible'); 
-        overlay.setPosition(undefined); 
-        view.animate({
-            center: initialCenter,
-            zoom: initialZoom,
-            duration: 800
-        });
+    function closePopup(){
+        popupEl.classList.remove('visible');
+        overlay.setPosition(undefined);
+        view.animate({center:initialCenter,zoom:initialZoom,duration:800});
     }
 
-    document.getElementById('popup-closer').onclick = function(){
+    document.getElementById('popup-closer').onclick=function(){
         closePopup();
         return false;
     };
 
-    // Cerrar popup al hacer clic fuera del mismo
-    map.on('click', function(evt){
-        // Si el clic no está sobre el overlay, cerrar
-        const clickedPixel = evt.pixel;
-        const overlayPixel = map.getPixelFromCoordinate(overlay.getPosition() || [0,0]);
-        if(overlay.getPosition() && clickedPixel[0] < overlayPixel[0]-popupEl.offsetWidth ||
-           clickedPixel[0] > overlayPixel[0]+popupEl.offsetWidth ||
-           clickedPixel[1] < overlayPixel[1]-popupEl.offsetHeight ||
-           clickedPixel[1] > overlayPixel[1]+popupEl.offsetHeight){
+    map.on('click',function(evt){
+        const clickedPixel=evt.pixel;
+        const overlayPixel=map.getPixelFromCoordinate(overlay.getPosition()||[0,0]);
+        if(overlay.getPosition()&&clickedPixel[0]<overlayPixel[0]-popupEl.offsetWidth||
+           clickedPixel[0]>overlayPixel[0]+popupEl.offsetWidth||
+           clickedPixel[1]<overlayPixel[1]-popupEl.offsetHeight||
+           clickedPixel[1]>overlayPixel[1]+popupEl.offsetHeight){
             closePopup();
         }
     });
 
-    map.on('singleclick', function(evt){
+    map.on('singleclick',function(evt){
         let foundFeature=null;
         map.forEachFeatureAtPixel(evt.pixel,function(ft,layer){
             if(layer!==atlasLayer) return;
@@ -242,7 +263,6 @@ window.addEventListener('load', function(){
         });
         if(!foundFeature) return;
 
-        // Cerrar popup anterior si existe
         closePopup();
 
         const especies=(foundFeature.get('especies')||'').split(';').map(s=>'<i>'+s.trim()+'</i>').join(', ');
@@ -253,26 +273,23 @@ window.addEventListener('load', function(){
 
         overlay.setPosition(evt.coordinate);
 
-        setTimeout(() => {
-            const margin = 10;
-            const rect = popupEl.getBoundingClientRect();
-            let pixel = map.getPixelFromCoordinate(overlay.getPosition());
-            let dx = 0, dy = 0;
+        setTimeout(()=>{
+            const margin=10;
+            const rect=popupEl.getBoundingClientRect();
+            let pixel=map.getPixelFromCoordinate(overlay.getPosition());
+            let dx=0,dy=0;
 
-            if(rect.right > window.innerWidth - margin) dx = rect.right - window.innerWidth + margin;
-            if(rect.left < margin) dx = rect.left - margin;
-            if(rect.bottom > window.innerHeight - margin) dy = rect.bottom - window.innerHeight + margin;
-            if(rect.top < margin) dy = rect.top - margin;
+            if(rect.right>window.innerWidth-margin) dx=rect.right-window.innerWidth+margin;
+            if(rect.left<margin) dx=rect.left-margin;
+            if(rect.bottom>window.innerHeight-margin) dy=rect.bottom-window.innerHeight+margin;
+            if(rect.top<margin) dy=rect.top-margin;
 
-            if(dx || dy){
-                overlay.setPosition(map.getCoordinateFromPixel([
-                    pixel[0] - dx,
-                    pixel[1] - dy
-                ]));
+            if(dx||dy){
+                overlay.setPosition(map.getCoordinateFromPixel([pixel[0]-dx,pixel[1]-dy]));
             }
 
             popupEl.classList.add('visible');
-        }, 0);
+        },0);
     });
 });
 </script>
