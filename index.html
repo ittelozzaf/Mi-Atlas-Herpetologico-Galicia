@@ -61,7 +61,6 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   display:none;
   z-index:2000;
   font-family:'Quicksand',sans-serif;
-  pointer-events:auto; /* permite scroll con el ratón */
 }
 .dropdown div{padding:6px 8px;cursor:pointer;font-size:13px;line-height:1.35;}
 .dropdown div:hover{background:#f0f0f0;}
@@ -178,7 +177,7 @@ window.addEventListener('load', function(){
         });
     }
 
-    /* ========= AUTOCOMPLETE MEJORADO ========= */
+    /* ========= AUTOCOMPLETE ACTUALIZADO ========= */
     function setupAutocomplete(input, dropdown, data){
 
         function renderList(filtered){
@@ -218,16 +217,11 @@ window.addEventListener('load', function(){
 
         dropdown.addEventListener('click',e=>e.stopPropagation());
 
-        // Cerrar dropdown si click fuera de input/dropdown
-        document.addEventListener('click', function(e){
-            if(!speciesInput.contains(e.target) && !speciesDropdown.contains(e.target)){
-                speciesDropdown.style.display = 'none';
-            }
-            if(!gridInput.contains(e.target) && !gridDropdown.contains(e.target)){
-                gridDropdown.style.display = 'none';
-            }
+        document.addEventListener('click',function(){
+            dropdown.style.display='none';
         });
     }
+    /* ======================================== */
 
     setupAutocomplete(speciesInput,speciesDropdown,speciesArray);
     setupAutocomplete(gridInput,gridDropdown,gridArray);
