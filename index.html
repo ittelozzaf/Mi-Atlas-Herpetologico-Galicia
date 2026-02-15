@@ -55,12 +55,13 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   border:1px solid #ccc;
   border-radius:4px;
   margin-top:4px;
-  max-height:260px; /* altura visible limitada */
-  overflow-y:auto;  /* scroll para resto */
+  max-height:260px;
+  overflow-y:auto;
   box-shadow:0 2px 8px rgba(0,0,0,0.25);
   display:none;
   z-index:2000;
   font-family:'Quicksand',sans-serif;
+  pointer-events:auto;
 }
 .dropdown div{padding:6px 8px;cursor:pointer;font-size:13px;line-height:1.35;}
 .dropdown div:hover{background:#f0f0f0;}
@@ -91,7 +92,6 @@ html, body { background-color: #ffffff; margin:0; padding:0; }
   text-decoration:none;
 }
 
-/* Permitir scroll página */
 .ol-viewport { touch-action: pan-y !important; }
 </style>
 
@@ -140,6 +140,7 @@ window.addEventListener('load', function(){
     const initialCenter = view.getCenter().slice(); 
     const initialZoom = view.getZoom();
 
+    // Detectar capa atlas
     let atlasLayer = null;
     map.getLayers().forEach(function(l){
         const t=(l.get('title')||'').toLowerCase();
@@ -147,6 +148,7 @@ window.addEventListener('load', function(){
     });
     if(!atlasLayer) return;
 
+    // Solo mantener interacciones Select
     map.getInteractions().forEach(function(interaction){
         if(!(interaction instanceof ol.interaction.Select)){
             map.removeInteraction(interaction);
@@ -177,38 +179,26 @@ window.addEventListener('load', function(){
         });
     }
 
-    /* ========= AUTOCOMPLETE ACTUALIZADO ========= */
     function setupAutocomplete(input, dropdown, data){
-
         function renderList(filtered){
             dropdown.innerHTML='';
             filtered.forEach(value=>{
                 const div=document.createElement('div');
                 div.textContent=value;
-
                 div.addEventListener('click',function(e){
                     e.stopPropagation();
                     input.value=value;
                     dropdown.style.display='none';
                     filterFeatures();
                 });
-
                 dropdown.appendChild(div);
             });
-
             dropdown.style.display = filtered.length?'block':'none';
         }
 
-        input.addEventListener('focus',function(){
-            renderList(data);
-        });
-
-        input.addEventListener('click',function(e){
-            e.stopPropagation();
-            renderList(data);
-        });
-
-        input.addEventListener('input',function(){
+        input.addEventListener('focus',()=>renderList(data));
+        input.addEventListener('click',e=>{ e.stopPropagation(); renderList(data); });
+        input.addEventListener('input',()=>{
             const val=input.value.toLowerCase();
             const filtered = data.filter(v=>v.toLowerCase().includes(val));
             renderList(filtered);
@@ -217,18 +207,21 @@ window.addEventListener('load', function(){
 
         dropdown.addEventListener('click',e=>e.stopPropagation());
 
-        document.addEventListener('click',function(){
-            dropdown.style.display='none';
+        document.addEventListener('click', function(e){
+            if(!speciesInput.contains(e.target) && !speciesDropdown.contains(e.target)){
+                speciesDropdown.style.display = 'none';
+            }
+            if(!gridInput.contains(e.target) && !gridDropdown.contains(e.target)){
+                gridDropdown.style.display = 'none';
+            }
         });
     }
-    /* ======================================== */
 
     setupAutocomplete(speciesInput,speciesDropdown,speciesArray);
     setupAutocomplete(gridInput,gridDropdown,gridArray);
 
     const overlay=new ol.Overlay({element:document.getElementById('popup'),autoPan:false});
     map.addOverlay(overlay);
-
     const popupEl=document.getElementById('popup');
 
     function closePopup(){
@@ -242,26 +235,32 @@ window.addEventListener('load', function(){
         return false;
     };
 
+    // Click fuera del popup siempre lo cierra
     map.on('click',function(evt){
         const clickedPixel=evt.pixel;
         const overlayPixel=map.getPixelFromCoordinate(overlay.getPosition()||[0,0]);
-        if(overlay.getPosition()&&clickedPixel[0]<overlayPixel[0]-popupEl.offsetWidth||
-           clickedPixel[0]>overlayPixel[0]+popupEl.offsetWidth||
-           clickedPixel[1]<overlayPixel[1]-popupEl.offsetHeight||
-           clickedPixel[1]>overlayPixel[1]+popupEl.offsetHeight){
+        if(overlay.getPosition()&&
+           (clickedPixel[0]<overlayPixel[0]-popupEl.offsetWidth||
+            clickedPixel[0]>overlayPixel[0]+popupEl.offsetWidth||
+            clickedPixel[1]<overlayPixel[1]-popupEl.offsetHeight||
+            clickedPixel[1]>overlayPixel[1]+popupEl.offsetHeight)){
             closePopup();
         }
     });
 
+    // Solo abrir popup si la feature pertenece a atlasLayer
     map.on('singleclick',function(evt){
         let foundFeature=null;
         map.forEachFeatureAtPixel(evt.pixel,function(ft,layer){
             if(layer!==atlasLayer) return;
             if(!ft.get('CUADRICULA')) return;
-            foundFeature=ft; 
+            foundFeature=ft;
             return true;
         });
-        if(!foundFeature) return;
+        if(!foundFeature){
+            closePopup(); // clic en cualquier otro lugar (IGN, fondo...) cierra popup
+            return;
+        }
 
         closePopup();
 
@@ -291,6 +290,16 @@ window.addEventListener('load', function(){
             popupEl.classList.add('visible');
         },0);
     });
+
+    // ESC cierra dropdowns y popups
+    document.addEventListener('keydown',function(e){
+        if(e.key==='Escape'||e.key==='Esc'){
+            speciesDropdown.style.display='none';
+            gridDropdown.style.display='none';
+            closePopup();
+        }
+    });
+
 });
 </script>
 
