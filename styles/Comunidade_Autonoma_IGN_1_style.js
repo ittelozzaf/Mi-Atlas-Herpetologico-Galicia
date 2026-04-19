@@ -7,8 +7,7 @@ var style_Comunidade_Autonoma_IGN_1 = function(feature, resolution){
         variables: {}
     };
     
-    var labelText = ""; 
-    var value = feature.get("");
+    var labelText = ""; var value = feature.get("");
     var labelFont = "10px, sans-serif";
     var labelFill = "#000000";
     var bufferColor = "";
